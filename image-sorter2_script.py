@@ -1,15 +1,11 @@
-
-
 """
  One-click image sorting/labelling script. Copies or moves images from a folder into subfolders. 
  This script launches a GUI which displays one image after the other and lets the user give different labels
  from a list provided as input to the script. In contrast to original version, version 2 allows for 
  relabelling and keeping track of the labels.
  Provides also short-cuts - press "1" to put into "label 1", press "2" to put into "label 2" a.s.o.
-
  USAGE:
  run 'python sort_folder_vers2.py' or copy the script in a jupyter notebook and run then
-
  you need also to provide your specific input (source folder, labels and other) in the preamble
  original Author: Christian Baumgartner (c.baumgartner@imperial.ac.uk)
  changes, version 2: Nestor Arsenov (nestorarsenov_AT_gmail_DOT_com)
@@ -19,17 +15,41 @@
 
 # Define global variables, which are to be changed by user:
 
-# In[5]:
 
 
+import argparse
+import pandas as pd
+import os
+import numpy as np
+
+import argparse
+import tkinter as tk
+import os
+from shutil import copyfile, move
+from PIL import ImageTk, Image
 ##### added in version 2
+
+parser = argparse.ArgumentParser()
+parser.add_argument('-f', '--folder', help='Input folder where the *tif images should be', required=True)
+parser.add_argument('-l', '--labels', help='Labels', required=True, default=["T1", "T2", "trash", "uncertain"], nargs='+')
+parser.add_argument('-k', '--keys', help='Keys', required=True, default=["1", "2", "3", "0"], nargs='+')
+
+args = parser.parse_args()
 
 # the folder in which the pictures that are to be sorted are stored
 # don't forget to end it with the sign '/' !
-input_folder = '/file_path/to/image_folder/'
+input_folder = args.folder
 
 # the different folders into which you want to sort the images, e.g. ['cars', 'bikes', 'cats', 'horses', 'shoes']
-labels = ["label1", "label2", "label3"]
+labels = args.labels
+
+# the different folders into which you want to sort the images, e.g. ['1', '2', '3', '4', '5']
+keys = args.keys
+for i,key in enumerate(keys):
+    if not isinstance(key, str):
+        keys[i] = str(key)
+
+assert len(labels)==len(keys), "Same number of keys and labels is required"
 
 # provide either 'copy' or 'move', depending how you want to sort the images into the new folders
 # - 'move' starts where you left off last time sorting, no 'go to #pic', works with number-buttons for labeling, no txt-file for tracking after closing GUI, saves memory
@@ -42,25 +62,26 @@ copy_or_move = 'copy'
 # If you provide a path to file that already exists, than this file will be used for keeping track of the storing.
 # This means: 1st time you run this script and such a file doesn't exist the file will be created and populated,
 # 2nd time you run the same script, and you use the same df_path, the script will use the file to continue the sorting.
-df_path = '/file_path/to/non_existing_file_df.txt'
+df_path = os.path.join(input_folder,'df_classif.txt')
 
 # a selection of what file-types to be sorted, anything else will be excluded
-file_extensions = ['.jpg', '.png', '.whatever']
+#file_extensions = ['.jpg', '.png', '.whatever']
+file_extensions = ['.tiff']
+
+def order_properly(l):
+    output = []
+    for typ in ['HGG','LGG']:
+        l_typ = [int(k[3:].split('_')[0]) for k in l if typ in k]
+        l_typ = sorted(l_typ)
+        l_typ = [typ+str(k)+'_.tiff' for k in l_typ]
+        output += l_typ
+    return output
+
 #####
 
 
-# In[8]:
 
 
-import pandas as pd
-import os
-import numpy as np
-
-import argparse
-import tkinter as tk
-import os
-from shutil import copyfile, move
-from PIL import ImageTk, Image
 
 class ImageGui:
     """
@@ -68,7 +89,7 @@ class ImageGui:
     Useful, for sorting views into sub views or for removing outliers from the data.
     """
 
-    def __init__(self, master, labels, paths):
+    def __init__(self, master, labels, keys, paths):
         """
         Initialise GUI
         :param master: The parent window
@@ -90,6 +111,7 @@ class ImageGui:
         self.index = 0
         self.paths = paths
         self.labels = labels
+        self.keys = keys
         #### added in version 2
         self.sorting_label = 'unsorted'
         ####
@@ -154,9 +176,16 @@ class ImageGui:
 
         # key bindings (so number pad can be used as shortcut)
         # make it not work for 'copy', so there is no conflict between typing a picture to go to and choosing a label with a number-key
-        if copy_or_move == 'move':
-            for key in range(self.n_labels):
-                master.bind(str(key+1), self.vote_key)
+        #if copy_or_move == 'move':
+        for i,label in enumerate(labels):
+            master.bind(keys[i], self.vote_key)
+
+        master.bind('<Left>', self.prev_key)
+        master.bind('<Right>', self.next_key)
+        # for key in range(self.n_labels):
+        #     master.bind(str(key+1), self.vote_key)
+        # master.bind('a', self.vote('axial'))
+        # master.bind('i', self.vote('axial'))
 
     def show_next_image(self):
         """
@@ -253,10 +282,26 @@ class ImageGui:
         Processes voting via the number key bindings.
         :param event: The event contains information about which key was pressed
         """
-        pressed_key = int(event.char)
-        label = self.labels[pressed_key-1]
+        #pressed_key = int(event.char)
+        label = [labels[i] for i, key in enumerate(keys) if key==event.char][0]
         self.vote(label)
-    
+
+    def next_key(self, event):
+        """
+        Processes voting via the number key bindings.
+        :param event: The event contains information about which key was pressed
+        """
+        #pressed_key = int(event.char)
+        self.move_next_image()   
+
+    def prev_key(self, event):
+        """
+        Processes voting via the number key bindings.
+        :param event: The event contains information about which key was pressed
+        """
+        #pressed_key = int(event.char)
+        self.move_prev_image()  
+
     #### added in version 2
     def num_pic_type(self, event):
         """Function that allows for typing to what picture the user wants to go.
@@ -281,7 +326,7 @@ class ImageGui:
         :return: Resized image
         """
         image = Image.open(path)
-        image = image.resize(size, Image.ANTIALIAS)
+        #image = image.resize(size, Image.ANTIALIAS)
         return image
 
     @staticmethod
@@ -369,9 +414,12 @@ if __name__ == "__main__":
 #             paths.append(path).
 
     ######## added in version 2
+    #print([ k for k in os.listdir(input_folder)])
     file_names = [fn for fn in sorted(os.listdir(input_folder))
                   if any(fn.endswith(ext) for ext in file_extensions)]
+    #file_names = order_properly(file_names)
     paths = [input_folder+file_name for file_name in file_names]
+    #print(paths)
     
     
     if copy_or_move == 'copy':
@@ -390,6 +438,7 @@ if __name__ == "__main__":
     
 # Start the GUI
 root = tk.Tk()
-app = ImageGui(root, labels, paths)
+app = ImageGui(root, labels, keys, paths)
 root.mainloop()
 
+# %%
