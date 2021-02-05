@@ -318,7 +318,7 @@ class ImageGui:
         self.set_image(df.sorted_in_folder[self.index])
 
     @staticmethod
-    def _load_image(path, size=(400,700)):
+    def _load_image(path, size=(1500, 600)):
         """
         Loads and resizes an image from a given path using the Pillow library
         :param path: Path to image
@@ -326,7 +326,7 @@ class ImageGui:
         :return: Resized image
         """
         image = Image.open(path)
-        #image = image.resize(size, Image.ANTIALIAS)
+        image = image.resize(size, Image.ANTIALIAS)
         return image
 
     @staticmethod
